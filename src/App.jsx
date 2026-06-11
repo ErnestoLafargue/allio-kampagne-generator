@@ -115,7 +115,11 @@ Antallet af objekter i "kampagner" skal matche antallet af kampagner i kontekste
   "naeste_skridt": ["punkt 1", "punkt 2", "punkt 3"]
 }
 
-BOOKINGFORVENTNING: Skriv forventet_bookinger og forventet_omsaetning som BEREGNES — tallene beregnes automatisk af systemet.`;
+BOOKINGFORVENTNING: Skriv forventet_bookinger og forventet_omsaetning som BEREGNES — tallene beregnes automatisk af systemet.
+
+VIGTIGT OM TAL:
+- Brug PRÆCIS de kundetal fra konteksten i "antal" — opfind ALDRIG egne tal
+- Nævn ALDRIG samlede kundetal i status_analyse — kun kvalitativ vurdering`;
 
 // ── Prisberegning ──────────────────────────────────────
 function beregnSmsSegmenter(tekst) {
@@ -133,7 +137,7 @@ function beregnKampagnePris(sms1, sms2, antal) {
 }
 
 function beregnBookinger(antal, tilbudspris) {
-  const n = parseInt(antal) || 0;
+  const n = parseInt(antal, 10) || 0;
   const pris = parseFloat(tilbudspris) || 0;
   const lav = Math.round(n * 0.035);
   const hoj = Math.round(n * 0.055);
@@ -143,6 +147,49 @@ function beregnBookinger(antal, tilbudspris) {
     bookinger: `${lav}-${hoj} bookinger`,
     omsaetning: `${omsLav.toLocaleString("da-DK")}-${omsHoj.toLocaleString("da-DK")} kr.`,
     lav, hoj, omsLav, omsHoj,
+  };
+}
+
+function kampagneAntal(k) {
+  return parseInt(k?.antal, 10) || 0;
+}
+
+function byggLeveringTal(kampagner, smsListe, levMeta = {}) {
+  const beregninger = kampagner.map((k, i) => {
+    const sms = smsListe[i] || { sms1: "", sms2: "" };
+    const pris = beregnKampagnePris(sms.sms1, sms.sms2, k.antal);
+    const book = beregnBookinger(k.antal, k.tilbudspris);
+    return { pris, book };
+  });
+
+  const kampagnerLev = kampagner.map((k, i) => {
+    const lev = levMeta.kampagner?.[i] || {};
+    const { pris, book } = beregninger[i];
+    return {
+      navn: lev.navn || k.ydelse,
+      antal: kampagneAntal(k),
+      beskrivelse: lev.beskrivelse || "",
+      pris_udsendelse: `${pris.pris} kr.`,
+      forventet_bookinger: book.bookinger,
+      forventet_omsaetning: book.omsaetning,
+    };
+  });
+
+  const samletPris = beregninger.reduce((s, b) => s + b.pris.pris, 0);
+  const samletBookLav = beregninger.reduce((s, b) => s + b.book.lav, 0);
+  const samletBookHoj = beregninger.reduce((s, b) => s + b.book.hoj, 0);
+  const samletOmsLav = beregninger.reduce((s, b) => s + b.book.omsLav, 0);
+  const samletOmsHoj = beregninger.reduce((s, b) => s + b.book.omsHoj, 0);
+  const samletKunder = kampagner.reduce((s, k) => s + kampagneAntal(k), 0);
+
+  return {
+    status_analyse: levMeta.status_analyse || "",
+    kampagner: kampagnerLev,
+    samlet_pris: `${samletPris} kr.`,
+    samlet_bookinger: `${samletBookLav}-${samletBookHoj} bookinger`,
+    samlet_omsaetning: `${samletOmsLav.toLocaleString("da-DK")}-${samletOmsHoj.toLocaleString("da-DK")} kr.`,
+    samlet_kunder: samletKunder,
+    naeste_skridt: levMeta.naeste_skridt || [],
   };
 }
 
@@ -168,6 +215,7 @@ const inp = {
   fontFamily: "inherit",
   boxSizing: "border-box",
   transition: "border-color 0.15s",
+  textAlign: "left",
 };
 
 const lbl = {
@@ -283,6 +331,7 @@ export default function AllioKampagneGenerator() {
   const [downloading, setDownloading] = useState(false);
   const [draftInfo, setDraftInfo] = useState(() => getInitialState().savedAt);
   const skipFirstSave = useRef(true);
+  const generationRef = useRef(0);
 
   const [form, setForm] = useState(() => getInitialState().form);
   const [kampagner, setKampagner] = useState(() => getInitialState().kampagner);
@@ -313,8 +362,12 @@ export default function AllioKampagneGenerator() {
 
   const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  const updateKampagne = (id, field, value) =>
+  const updateKampagne = (id, field, value) => {
+    if (["antal", "normalpris", "tilbudspris", "ydelse"].includes(field)) {
+      setResult(null);
+    }
     setKampagner(ks => ks.map(k => k.id === id ? { ...k, [field]: value } : k));
+  };
 
   const tilfoejKampagne = () => {
     if (kampagner.length >= MAX_KAMPAGNER) return;
@@ -363,13 +416,15 @@ ${getSaesonKontekst()}`;
   }
 
   async function genererSmsUdkast() {
-    setLoading(true); setError(null);
+    const genId = ++generationRef.current;
+    setLoading(true); setError(null); setResult(null);
     try {
       const p = await callAPI(
         SMS_SYSTEM_PROMPT,
         `Generer SMS-udkast for ${kampagner.length} kampagne(r):\n\n${buildContext()}`,
         500 + kampagner.length * 400,
       );
+      if (genId !== generationRef.current) return;
       setSmsRedigeret(normaliserSmsKampagner(p, kampagner.length));
       setStep(2);
     } catch (e) { setError(formatApiError(e, "sms")); }
@@ -377,6 +432,7 @@ ${getSaesonKontekst()}`;
   }
 
   async function raffinerOgGenerer() {
+    const genId = ++generationRef.current;
     setLoading(true); setError(null);
     try {
       const smsPayload = { kampagner: smsRedigeret };
@@ -393,47 +449,19 @@ ${getSaesonKontekst()}`;
           800 + kampagner.length * 300,
         ),
       ]);
+      if (genId !== generationRef.current) return;
       if (raffResult.status === "rejected") throw new Error(formatApiError(raffResult.reason, "polering"));
       if (levResult.status === "rejected") throw new Error(formatApiError(levResult.reason, "levering"));
       const raffineret = raffResult.value;
       const levData = levResult.value;
 
       const smsListe = normaliserSmsKampagner(raffineret, kampagner.length);
-      const beregninger = kampagner.map((k, i) => {
-        const sms = smsListe[i] || { sms1: "", sms2: "" };
-        const pris = beregnKampagnePris(sms.sms1, sms.sms2, k.antal);
-        const book = beregnBookinger(k.antal, k.tilbudspris);
-        return { pris, book };
-      });
-
       const levNormaliseret = normaliserLeveringKampagner(levData, kampagner.length, kampagner);
-      const kampagnerLev = kampagner.map((k, i) => {
-        const lev = levNormaliseret[i] || {};
-        const { pris, book } = beregninger[i];
-        return {
-          navn: lev.navn || k.ydelse,
-          antal: parseInt(k.antal) || 0,
-          beskrivelse: lev.beskrivelse || "",
-          pris_udsendelse: `${pris.pris} kr.`,
-          forventet_bookinger: book.bookinger,
-          forventet_omsaetning: book.omsaetning,
-        };
-      });
-
-      const samletPris = beregninger.reduce((s, b) => s + b.pris.pris, 0);
-      const samletBookLav = beregninger.reduce((s, b) => s + b.book.lav, 0);
-      const samletBookHoj = beregninger.reduce((s, b) => s + b.book.hoj, 0);
-      const samletOmsLav = beregninger.reduce((s, b) => s + b.book.omsLav, 0);
-      const samletOmsHoj = beregninger.reduce((s, b) => s + b.book.omsHoj, 0);
-
-      const levering = {
+      const levering = byggLeveringTal(kampagner, smsListe, {
         status_analyse: levData.status_analyse || "",
-        kampagner: kampagnerLev,
-        samlet_pris: `${samletPris} kr.`,
-        samlet_bookinger: `${samletBookLav}-${samletBookHoj} bookinger`,
-        samlet_omsaetning: `${samletOmsLav.toLocaleString("da-DK")}-${samletOmsHoj.toLocaleString("da-DK")} kr.`,
+        kampagner: levNormaliseret,
         naeste_skridt: levData.naeste_skridt || [],
-      };
+      });
 
       setResult({ sms: smsListe, levering });
       setStep(3);
@@ -442,14 +470,15 @@ ${getSaesonKontekst()}`;
   }
 
   async function downloadDocx() {
-    if (!result) return;
+    const levering = getAktuelLevering();
+    if (!result || !levering) return;
     setDownloading(true);
     setError(null);
     try {
       const r = await fetch("/api/docx", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ form, kampagner, result }),
+        body: JSON.stringify({ form, kampagner, result: { ...result, levering } }),
       });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
@@ -480,9 +509,15 @@ ${getSaesonKontekst()}`;
     setCopied(key); setTimeout(() => setCopied(null), 2000);
   }
 
+  function getAktuelLevering() {
+    if (!result) return null;
+    return byggLeveringTal(kampagner, result.sms, result.levering);
+  }
+
   function copyAll() {
     if (!result) return;
-    const { sms, levering } = result;
+    const { sms } = result;
+    const levering = getAktuelLevering();
 
     const kampagneBlokke = kampagner.map((k, i) => {
       const lev = levering.kampagner[i];
@@ -490,7 +525,7 @@ ${getSaesonKontekst()}`;
       return `${"─".repeat(52)}
 
 KAMPAGNE ${i + 1}: ${(lev?.navn || k.ydelse).toUpperCase()}
-${lev?.antal} sovende kunder — ${lev?.beskrivelse}
+${kampagneAntal(k)} sovende kunder — ${lev?.beskrivelse}
 
 SMS #1 — Genaktivering:
 ${smsData.sms1}
@@ -697,7 +732,7 @@ ${levering.naeste_skridt?.map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
             {error && <div style={{ background: C.errorBg, border: `1px solid #FECACA`, borderRadius: 8, padding: "12px 16px", marginBottom: 16, color: C.error, fontSize: 14 }}>{error}</div>}
 
             <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
-              <button style={btnSecondary} onClick={() => setStep(1)}>← Ret input</button>
+              <button style={{ ...btnSecondary, opacity: loading ? 0.4 : 1 }} disabled={loading} onClick={() => { generationRef.current++; setStep(1); }}>← Ret input</button>
               <button style={{ ...btnPrimary, opacity: loading ? 0.6 : 1, minWidth: 210 }}
                 disabled={loading} onClick={raffinerOgGenerer}>
                 {loading ? <span style={{ display: "flex", alignItems: "center", gap: 8 }}><Spinner />Genererer levering...</span> : "Poler & generer levering ✦"}
@@ -707,7 +742,10 @@ ${levering.naeste_skridt?.map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
         )}
 
         {/* ── STEP 3: LEVERING ── */}
-        {step === 3 && result && (
+        {step === 3 && result && (() => {
+          const levering = getAktuelLevering();
+          if (!levering) return null;
+          return (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 }}>
               <div>
@@ -725,11 +763,11 @@ ${levering.naeste_skridt?.map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
 
             <div style={{ ...card, borderLeft: `3px solid ${C.blue}`, background: C.white }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: C.blue, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 10 }}>Status & Potentiale</div>
-              <p style={{ fontSize: 14, margin: 0, lineHeight: 1.7, color: C.textMid }}>{result.levering.status_analyse}</p>
+              <p style={{ fontSize: 14, margin: 0, lineHeight: 1.7, color: C.textMid }}>{levering.status_analyse}</p>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
-              {[["Kampagnepris", result.levering.samlet_pris], ["Forv. bookinger", result.levering.samlet_bookinger], ["Forv. omsætning", result.levering.samlet_omsaetning]].map(([k, v]) => (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+              {[["Sovende kunder", `${levering.samlet_kunder} i alt`], ["Kampagnepris", levering.samlet_pris], ["Forv. bookinger", levering.samlet_bookinger], ["Forv. omsætning", levering.samlet_omsaetning]].map(([k, v]) => (
                 <div key={k} style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 12, padding: "18px 20px", boxShadow: "0 1px 3px rgba(15,23,42,0.05)" }}>
                   <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{k}</div>
                   <div style={{ fontSize: 20, fontWeight: 700, color: C.navy }}>{v}</div>
@@ -738,7 +776,7 @@ ${levering.naeste_skridt?.map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
             </div>
 
             {kampagner.map((k, i) => {
-              const lev = result.levering.kampagner[i];
+              const lev = levering.kampagner[i];
               const sms = result.sms[i] || {};
               return (
                 <div key={k.id} style={card}>
@@ -748,7 +786,7 @@ ${levering.naeste_skridt?.map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
                       <span style={{ fontSize: 16, fontWeight: 600, color: C.navy }}>{lev?.navn || k.ydelse}</span>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 22, fontWeight: 700, color: C.navy }}>{lev?.antal}</div>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: C.navy }}>{kampagneAntal(k)}</div>
                       <div style={{ fontSize: 11, color: C.textMuted }}>sovende kunder</div>
                     </div>
                   </div>
@@ -763,8 +801,8 @@ ${levering.naeste_skridt?.map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
                           {copied === key ? "Kopieret ✓" : "Kopiér"}
                         </button>
                       </div>
-                      <div style={{ fontSize: 14, lineHeight: 1.8, color: C.textMid, whiteSpace: "pre-wrap" }}>{tekst}</div>
-                      <div style={{ fontSize: 11, color: C.textLight, marginTop: 8 }}>{tekst?.length || 0} tegn · {beregnSmsSegmenter(tekst)} SMS-segment(er)</div>
+                      <div style={{ fontSize: 14, lineHeight: 1.8, color: C.textMid, whiteSpace: "pre-wrap", textAlign: "left" }}>{tekst}</div>
+                      <div style={{ fontSize: 11, color: C.textLight, marginTop: 8, textAlign: "left" }}>{tekst?.length || 0} tegn · {beregnSmsSegmenter(tekst)} SMS-segment(er)</div>
                     </div>
                   ))}
 
@@ -782,7 +820,7 @@ ${levering.naeste_skridt?.map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
 
             <div style={card}>
               <div style={secLabel}>Næste skridt</div>
-              {result.levering.naeste_skridt?.map((s, i) => (
+              {levering.naeste_skridt?.map((s, i) => (
                 <div key={i} style={{ display: "flex", gap: 14, marginBottom: 12, fontSize: 14 }}>
                   <div style={{ minWidth: 24, height: 24, background: C.blueDim, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: C.blue, flexShrink: 0 }}>{i + 1}</div>
                   <div style={{ color: C.textMid, lineHeight: 1.6, paddingTop: 3 }}>{s}</div>
@@ -794,7 +832,8 @@ ${levering.naeste_skridt?.map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
               <button style={btnSecondary} onClick={copyAll}>{copied === "all" ? "✓ Kopieret til udklipsholder" : "Kopiér hele dokumentet som tekst"}</button>
             </div>
           </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );

@@ -50,7 +50,7 @@ function spacer(after = 160) {
 }
 
 function sectionLabel(text) {
-  return para([run(text, { bold: true, size: 18, color: BLUE, allCaps: true })], {
+  return para([run(text, { bold: true, size: 22, color: BLUE, allCaps: true })], {
     spacing: { before: 80, after: 80 },
   });
 }
@@ -96,9 +96,9 @@ function smsBox(title, tekst) {
     new TableRow({
       children: [
         cell([
-          para([run(title, { bold: true, size: 18, color: BLUE, allCaps: true })], { spacing: { after: 100 } }),
-          para([run(tekst || "", { size: 28, color: TEXT_MID })], { spacing: { after: 80, line: 360 } }),
-          para([run(`${len} tegn · ${seg} SMS-segment(er)`, { size: 18, color: TEXT_LIGHT })], { spacing: { after: 0 } }),
+          para([run(title, { bold: true, size: 18, color: BLUE, allCaps: true })], { spacing: { after: 100 }, alignment: AlignmentType.LEFT }),
+          para([run(tekst || "", { size: 28, color: TEXT_MID })], { spacing: { after: 80, line: 360 }, alignment: AlignmentType.LEFT }),
+          para([run(`${len} tegn · ${seg} SMS-segment(er)`, { size: 18, color: TEXT_LIGHT })], { spacing: { after: 0 }, alignment: AlignmentType.LEFT }),
         ], { shading: SURFACE_ALT, borders: ACCENT_LEFT }),
       ],
     }),
@@ -141,7 +141,7 @@ export async function buildLeveringDocx({ form, kampagner, result }) {
       children: [
         cell([
           sectionLabel("Status & Potentiale"),
-          para([run(levering.status_analyse || "", { size: 28, color: TEXT_MID })], { line: 360 }),
+          para([run(levering.status_analyse || "", { size: 24, color: TEXT_MID })], { line: 360 }),
         ], { shading: WHITE, borders: ACCENT_LEFT }),
       ],
     }),
@@ -178,13 +178,13 @@ export async function buildLeveringDocx({ form, kampagner, result }) {
         children: [
           cell([
             para([
-              run(`Kampagne ${i + 1}`, { bold: true, size: 18, color: BLUE }),
+              run(`Kampagne ${i + 1}`, { bold: true, size: 24, color: BLUE }),
               run("    "),
               run(navn, { bold: true, size: 32, color: NAVY }),
             ], { spacing: { after: 0 } }),
           ], { shading: WHITE, width: 70, borders: { ...CARD_BORDER, right: { style: BorderStyle.NONE, size: 0, color: WHITE } } }),
           cell([
-            para([run(String(lev.antal ?? ""), { bold: true, size: 44, color: NAVY })], {
+            para([run(String(parseInt(k.antal, 10) || lev.antal || ""), { bold: true, size: 44, color: NAVY })], {
               alignment: AlignmentType.RIGHT, spacing: { after: 20 },
             }),
             para([run("sovende kunder", { size: 18, color: TEXT_MUTED })], {
