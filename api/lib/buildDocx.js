@@ -84,9 +84,9 @@ function beregnSmsSegmenter(tekst) {
 
 function metricCard(label, value) {
   return cell([
-    para([run(label, { size: 18, color: TEXT_MUTED, bold: true, allCaps: true })], { spacing: { after: 60 } }),
+    para([run(label, { size: 18, color: TEXT_MUTED, bold: true })], { spacing: { after: 60 } }),
     para([run(value || "", { size: 40, bold: true, color: NAVY })], { spacing: { after: 0 } }),
-  ], { shading: WHITE, width: 33 });
+  ], { shading: WHITE, width: 50 });
 }
 
 function smsBox(title, tekst) {
@@ -105,11 +105,11 @@ function smsBox(title, tekst) {
   ]);
 }
 
-function miniMetric(label, value) {
+function miniMetric(label, value, width = 50) {
   return cell([
-    para([run(label, { size: 16, color: TEXT_LIGHT, bold: true, allCaps: true })], { spacing: { after: 40 } }),
+    para([run(label, { size: 16, color: TEXT_LIGHT, bold: true })], { spacing: { after: 40 } }),
     para([run(value || "", { size: 22, bold: true, color: NAVY })], { spacing: { after: 0 } }),
-  ], { shading: SURFACE_ALT, width: 33, borders: {
+  ], { shading: SURFACE_ALT, width, borders: {
     top: { style: BorderStyle.SINGLE, size: 1, color: BORDER },
     bottom: { style: BorderStyle.SINGLE, size: 1, color: BORDER },
     left: { style: BorderStyle.SINGLE, size: 1, color: BORDER },
@@ -148,13 +148,12 @@ export async function buildLeveringDocx({ form, kampagner, result }) {
   ]));
   children.push(spacer(200));
 
-  // ── Samlede tal (3 kort) ──
+  // ── Samlede tal (2 kort) ──
   children.push(cardTable([
     new TableRow({
       children: [
-        metricCard("Kampagnepris", levering.samlet_pris),
-        metricCard("Forv. bookinger", levering.samlet_bookinger),
-        metricCard("Forv. omsætning", levering.samlet_omsaetning),
+        metricCard("Estimeret kampagnepris", levering.samlet_pris),
+        metricCard("Forventede bookinger", levering.samlet_bookinger),
       ],
     }),
   ], { borders: {
@@ -211,9 +210,8 @@ export async function buildLeveringDocx({ form, kampagner, result }) {
     children.push(cardTable([
       new TableRow({
         children: [
-          miniMetric("Udsendelse", lev.pris_udsendelse),
-          miniMetric("Bookinger", lev.forventet_bookinger),
-          miniMetric("Omsætning", lev.forventet_omsaetning),
+          miniMetric("Estimeret udsendelse", lev.pris_udsendelse),
+          miniMetric("Forventede bookinger", lev.forventet_bookinger),
         ],
       }),
     ], { borders: {

@@ -38,7 +38,45 @@ function nyKampagne() {
 }
 
 // ── System Prompts ─────────────────────────────────────
+const KAMPAGNE_FLOW_REGLER = `KAMPAGNE-FLOW (GÆLDER ALTID):
+- Hver kampagne består af præcis 2 SMS'er: SMS #1 (genaktivering) og SMS #2 (booster)
+- SMS #2 (booster) sendes ALTID præcis 48 timer efter SMS #1 — aldrig samme dag, aldrig anden timing
+- Booster er en venlig PÅMINDELSE på den første besked — ikke en ny kampagne med nyt tilbud
+- Booster refererer til SMS #1 (fx "jeg skrev til dig for et par dage siden...") og gentager ikke hele salgspitchen
+- Booster er helst kortere og mere direkte end SMS #1, men ingen fast tegngrænse
+- Undgå tidsreferencer i booster der ikke passer til 48 timer efter (fx "i går" eller "i morges")`;
+
+const SEGMENT_REGLER = `SEGMENT (GÆLDER ALTID):
+- Modtagerne er tidligere kunder der allerede har købt denne ydelse — ikke nye leads
+- De har ikke booket eller behandlet sig i 90+ dage (sovende kunder)
+- De kender ydelsen og klinikken — skriv som en genaktivering, ikke en introduktion
+- Brug managerens noter til vinkel og tone
+- Beskriv segmentet som "tidligere kunder der kender ydelsen"`;
+
+const VINKEL_REGLER = `VINKEL (vælg ÉN ud fra noter og kontekst — bland aldrig flere):
+- Sæson/tid på året (fx sommer, vinterpause, ferie)
+- Opfølgning/fornyelse (behandlingen trænger til sin tur igen)
+- Personlig genaktivering (varm tjek-in, "tænkte på dig")
+- Særlig anledning fra noter (event, ny behandling, klinik-jubilæum)
+- Eller en helt anden vinkel der passer bedre ud fra noterne
+Tilpas SMS #1 til valgt vinkel. Hvis noter er tomme: personlig genaktivering + kampagnepris.`;
+
+const BOOKING_CTA_REGLER = `BOOKING-CTA:
+- INGEN "Svar JA", INGEN telefon-opfordring, INGEN STOP-linje eller frameldelsestekst
+- CTA skal naturligt henvise til booking via link — linket er den primære handling
+- Brug placeholder [Bookinglink] hvor kunden skal booke
+- Eksempler: "Book din tid her: [Bookinglink]" / "Du kan booke direkte her: [Bookinglink]"
+- Én tydelig booking-handling per SMS`;
+
 const SMS_SYSTEM_PROMPT = `Du er en ekspert i SMS-markedsføring for skønheds- og behandlingsklinikker i Danmark. Du skriver på dansk med korrekte danske tegn: æ, ø, å, Æ, Ø, Å.
+
+${KAMPAGNE_FLOW_REGLER}
+
+${SEGMENT_REGLER}
+
+${VINKEL_REGLER}
+
+${BOOKING_CTA_REGLER}
 
 REGLER FOR SMS-BESKEDER:
 - INGEN emojis
@@ -48,11 +86,10 @@ REGLER FOR SMS-BESKEDER:
 - Beskeden skal føles 100% skrædersyet til modtageren — ALDRIG som en masse-SMS
 - Brug altid klinikejerens fornavn og klinikkens navn naturligt i beskeden
 - Brug [Fornavn] som placeholder for kundens navn
-- Konkret tilbudspris skal med — gør besparelsen synlig og håndgribelig
-- Skab urgency via konkret dato eller "få ledige tider tilbage"
+- Konkret kampagnepris skal med — gør besparelsen synlig og håndgribelig
+- Skab naturlig urgency via sæson, anledning eller personlig opfølgning — ikke via ledige tider eller telefonopfølgning
 - Aldrig medicinske løfter, sundhedspåstande eller diagnose-referencer
 - Aldrig aggressiv eller pushy salgstone
-- SMS #2 (booster) skal være kortere og mere direkte end SMS #1
 
 PERSONLIGHED:
 - Start altid med "Hej [Fornavn],"
@@ -65,7 +102,7 @@ Antallet af objekter i "kampagner" skal matche antallet af kampagner i kontekste
 
 {
   "kampagner": [
-    { "sms1": "fuld SMS-tekst", "sms2": "fuld booster SMS-tekst — kortere og mere direkte" }
+    { "sms1": "fuld SMS-tekst — genaktivering", "sms2": "fuld booster SMS-tekst — sendes 48 timer efter sms1, kortere og mere direkte" }
   ]
 }`;
 
@@ -73,9 +110,18 @@ const REFINED_SMS_SYSTEM_PROMPT = `Du er en ekspert i SMS-markedsføring for sk�
 
 Du får et redigeret SMS-udkast og skal generere en skarpere, mere poleret version der bevarer den personlige tone og alle rettelser manageren har lavet.
 
+${KAMPAGNE_FLOW_REGLER}
+
+${SEGMENT_REGLER}
+
+${VINKEL_REGLER}
+
+${BOOKING_CTA_REGLER}
+
 REGLER:
 - Bevar alle rettelser manageren har lavet — de er intentionelle
 - Gør sproget endnu mere naturligt og personligt
+- Bevar [Bookinglink] og [Fornavn] placeholders
 - INGEN emojis, INGEN specialtegn
 - Brug korrekte danske bogstaver: æ ø å
 - Start med "Hej [Fornavn],"
@@ -86,13 +132,15 @@ Antallet af objekter i "kampagner" skal matche input — én entry per kampagne,
 
 {
   "kampagner": [
-    { "sms1": "poleret SMS-tekst", "sms2": "poleret booster SMS-tekst" }
+    { "sms1": "poleret genaktiverings-SMS", "sms2": "poleret booster SMS — sendes 48 timer efter sms1" }
   ]
 }`;
 
 const LEVERING_SYSTEM_PROMPT = `Du er en ekspert i SMS-markedsføring for skønheds- og behandlingsklinikker i Danmark. Du skriver på dansk med korrekte danske tegn: æ, ø, å, Æ, Ø, Å.
 
 Du genererer en komplet kampagneanalyse baseret på godkendte SMS-udkast.
+
+${KAMPAGNE_FLOW_REGLER}
 
 FORMAT: Returner KUN valid JSON uden markdown eller forklaringer.
 Antallet af objekter i "kampagner" skal matche antallet af kampagner i konteksten — én entry per kampagne, i samme rækkefølge.
@@ -105,21 +153,27 @@ Antallet af objekter i "kampagner" skal matche antallet af kampagner i kontekste
       "antal": antal som tal,
       "beskrivelse": "1 sætning om hvem disse kunder er",
       "pris_udsendelse": "BEREGNES",
-      "forventet_bookinger": "BEREGNES",
-      "forventet_omsaetning": "BEREGNES"
+      "forventet_bookinger": "BEREGNES"
     }
   ],
   "samlet_pris": "BEREGNES",
   "samlet_bookinger": "BEREGNES",
-  "samlet_omsaetning": "BEREGNES",
   "naeste_skridt": ["punkt 1", "punkt 2", "punkt 3"]
 }
 
-BOOKINGFORVENTNING: Skriv forventet_bookinger og forventet_omsaetning som BEREGNES — tallene beregnes automatisk af systemet.
+BOOKINGFORVENTNING: Skriv forventet_bookinger som BEREGNES — tallet beregnes automatisk af systemet. Inkluder IKKE omsætning eller indtjening.
 
 VIGTIGT OM TAL:
 - Brug PRÆCIS de kundetal fra konteksten i "antal" — opfind ALDRIG egne tal
-- Nævn ALDRIG samlede kundetal i status_analyse — kun kvalitativ vurdering`;
+- Nævn ALDRIG samlede kundetal i status_analyse — kun kvalitativ vurdering
+
+SEGMENT-BESKRIVELSE: Beskriv hvem disse kunder er som tidligere købere af ydelsen der ikke er kommet igen.
+
+NÆSTE SKRIDT — KUN kundevendte leveringstrin:
+- Godkend SMS-tekster
+- Planlæg eller igangsæt udsendelse (SMS #1, derefter booster 48 timer efter)
+- Opfølg på kampagneresultater efter udsendelse
+Inkluder ALDRIG interne driftstrin: log svar, ring til kunder, foreslå tider, STOP-håndtering eller teknisk opsætning i SMS-platformen.`;
 
 // ── Prisberegning ──────────────────────────────────────
 function beregnSmsSegmenter(tekst) {
@@ -136,17 +190,13 @@ function beregnKampagnePris(sms1, sms2, antal) {
   return { seg1, seg2, totalSeg, pris };
 }
 
-function beregnBookinger(antal, tilbudspris) {
+function beregnBookinger(antal) {
   const n = parseInt(antal, 10) || 0;
-  const pris = parseFloat(tilbudspris) || 0;
   const lav = Math.round(n * 0.035);
   const hoj = Math.round(n * 0.055);
-  const omsLav = Math.ceil((lav * pris) / 100) * 100;
-  const omsHoj = Math.ceil((hoj * pris) / 100) * 100;
   return {
     bookinger: `${lav}-${hoj} bookinger`,
-    omsaetning: `${omsLav.toLocaleString("da-DK")}-${omsHoj.toLocaleString("da-DK")} kr.`,
-    lav, hoj, omsLav, omsHoj,
+    lav, hoj,
   };
 }
 
@@ -158,7 +208,7 @@ function byggLeveringTal(kampagner, smsListe, levMeta = {}) {
   const beregninger = kampagner.map((k, i) => {
     const sms = smsListe[i] || { sms1: "", sms2: "" };
     const pris = beregnKampagnePris(sms.sms1, sms.sms2, k.antal);
-    const book = beregnBookinger(k.antal, k.tilbudspris);
+    const book = beregnBookinger(k.antal);
     return { pris, book };
   });
 
@@ -171,15 +221,12 @@ function byggLeveringTal(kampagner, smsListe, levMeta = {}) {
       beskrivelse: lev.beskrivelse || "",
       pris_udsendelse: `${pris.pris} kr.`,
       forventet_bookinger: book.bookinger,
-      forventet_omsaetning: book.omsaetning,
     };
   });
 
   const samletPris = beregninger.reduce((s, b) => s + b.pris.pris, 0);
   const samletBookLav = beregninger.reduce((s, b) => s + b.book.lav, 0);
   const samletBookHoj = beregninger.reduce((s, b) => s + b.book.hoj, 0);
-  const samletOmsLav = beregninger.reduce((s, b) => s + b.book.omsLav, 0);
-  const samletOmsHoj = beregninger.reduce((s, b) => s + b.book.omsHoj, 0);
   const samletKunder = kampagner.reduce((s, k) => s + kampagneAntal(k), 0);
 
   return {
@@ -187,7 +234,6 @@ function byggLeveringTal(kampagner, smsListe, levMeta = {}) {
     kampagner: kampagnerLev,
     samlet_pris: `${samletPris} kr.`,
     samlet_bookinger: `${samletBookLav}-${samletBookHoj} bookinger`,
-    samlet_omsaetning: `${samletOmsLav.toLocaleString("da-DK")}-${samletOmsHoj.toLocaleString("da-DK")} kr.`,
     samlet_kunder: samletKunder,
     naeste_skridt: levMeta.naeste_skridt || [],
   };
@@ -385,10 +431,11 @@ export default function AllioKampagneGenerator() {
   function buildContext() {
     const kampagneTekst = kampagner.map((k, i) => `KAMPAGNE ${i + 1}:
 - Ydelse: ${k.ydelse}
+- Segment: Tidligere kunder der har købt ${k.ydelse} men ikke er kommet igen i 90+ dage
 - Antal sovende kunder (90+ dage): ${k.antal}
 - Normalpris: ${k.normalpris} kr.
 - Kampagnepris: ${k.tilbudspris} kr.
-- Kontekst: ${k.noter || "Ingen noter"}`).join("\n\n");
+- Noter til vinkel og tone: ${k.noter || "Ingen — brug personlig genaktivering"}`).join("\n\n");
 
     return `KLIENT: ${form.kundenavn}
 KLINIK: ${form.kliknavn}
@@ -396,6 +443,9 @@ DATO: ${form.dato}
 ANTAL KAMPAGNER: ${kampagner.length}
 
 ${kampagneTekst}
+
+SMS-FLOW: SMS #1 (genaktivering) sendes først. SMS #2 (booster/påmindelse) sendes ALTID præcis 48 timer efter SMS #1.
+BOOKING: Alle SMS'er skal henvise til booking via [Bookinglink] — link indsættes automatisk i SMS-systemet.
 
 GENERELLE NOTER: ${form.ekstra_info || "Ingen"}
 ${getSaesonKontekst()}`;
@@ -534,7 +584,7 @@ SMS #2 — Booster (48 timer efter):
 ${smsData.sms2}
 
 Prisoverslag: ${lev?.pris_udsendelse}
-Forventet: ${lev?.forventet_bookinger} — ${lev?.forventet_omsaetning}`;
+Forventede bookinger: ${lev?.forventet_bookinger}`;
     }).join("\n\n");
 
     const txt = `DATAANALYSE & KAMPAGNEANBEFALINGER
@@ -551,7 +601,6 @@ ${"─".repeat(52)}
 SAMLET
 Kampagnepris: ${levering.samlet_pris}
 Forventede bookinger: ${levering.samlet_bookinger}
-Forventet omsætning: ${levering.samlet_omsaetning}
 
 ${"─".repeat(52)}
 
@@ -766,8 +815,8 @@ ${levering.naeste_skridt?.map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
               <p style={{ fontSize: 14, margin: 0, lineHeight: 1.7, color: C.textMid }}>{levering.status_analyse}</p>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
-              {[["Sovende kunder", `${levering.samlet_kunder} i alt`], ["Kampagnepris", levering.samlet_pris], ["Forv. bookinger", levering.samlet_bookinger], ["Forv. omsætning", levering.samlet_omsaetning]].map(([k, v]) => (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              {[["Kampagnepris", levering.samlet_pris], ["Forv. bookinger", levering.samlet_bookinger]].map(([k, v]) => (
                 <div key={k} style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 12, padding: "18px 20px", boxShadow: "0 1px 3px rgba(15,23,42,0.05)" }}>
                   <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{k}</div>
                   <div style={{ fontSize: 20, fontWeight: 700, color: C.navy }}>{v}</div>
@@ -806,8 +855,8 @@ ${levering.naeste_skridt?.map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
                     </div>
                   ))}
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 16 }}>
-                    {[["Udsendelse", lev?.pris_udsendelse], ["Bookinger", lev?.forventet_bookinger], ["Omsætning", lev?.forventet_omsaetning]].map(([label, v]) => (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 16 }}>
+                    {[["Udsendelse", lev?.pris_udsendelse], ["Forv. bookinger", lev?.forventet_bookinger]].map(([label, v]) => (
                       <div key={label} style={{ background: C.surfaceAlt, borderRadius: 8, padding: "10px 14px", border: `1px solid ${C.borderLight}` }}>
                         <div style={{ fontSize: 10, color: C.textLight, marginBottom: 4, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
                         <div style={{ fontSize: 13, fontWeight: 600, color: C.navy }}>{v}</div>
