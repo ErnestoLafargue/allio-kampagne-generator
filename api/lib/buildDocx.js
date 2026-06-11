@@ -1,26 +1,120 @@
 import {
-  Document, Packer, Paragraph, TextRun, HeadingLevel,
+  AlignmentType,
+  BorderStyle,
+  Document,
+  Packer,
+  Paragraph,
+  ShadingType,
+  Table,
+  TableCell,
+  TableLayoutType,
+  TableRow,
+  TextRun,
+  VerticalAlign,
+  WidthType,
 } from "docx";
 
-function heading(text, level = HeadingLevel.HEADING_2) {
-  return new Paragraph({ text, heading: level, spacing: { before: 300, after: 120 } });
+// Allio brand (hex uden #)
+const NAVY = "0F172A";
+const BLUE = "4F6EF7";
+const BLUE_DIM = "EEF2FF";
+const SURFACE_ALT = "F4F5FA";
+const BORDER = "E2E4EE";
+const TEXT_MID = "374151";
+const TEXT_MUTED = "6B7280";
+const TEXT_LIGHT = "9CA3AF";
+const WHITE = "FFFFFF";
+
+const FONT = "Calibri";
+const CARD_BORDER = {
+  top: { style: BorderStyle.SINGLE, size: 1, color: BORDER },
+  bottom: { style: BorderStyle.SINGLE, size: 1, color: BORDER },
+  left: { style: BorderStyle.SINGLE, size: 1, color: BORDER },
+  right: { style: BorderStyle.SINGLE, size: 1, color: BORDER },
+};
+const ACCENT_LEFT = {
+  ...CARD_BORDER,
+  left: { style: BorderStyle.SINGLE, size: 24, color: BLUE },
+};
+
+function run(text, opts = {}) {
+  return new TextRun({ text, font: FONT, ...opts });
 }
 
-function body(text, opts = {}) {
-  return new Paragraph({
-    children: [new TextRun({ text, ...opts })],
-    spacing: { after: 120 },
+function para(children, opts = {}) {
+  return new Paragraph({ children: Array.isArray(children) ? children : [children], ...opts });
+}
+
+function spacer(after = 160) {
+  return para([run("")], { spacing: { after } });
+}
+
+function sectionLabel(text) {
+  return para([run(text, { bold: true, size: 18, color: BLUE, allCaps: true })], {
+    spacing: { before: 80, after: 80 },
   });
 }
 
-function boldLine(label, value) {
-  return new Paragraph({
-    children: [
-      new TextRun({ text: `${label}: `, bold: true }),
-      new TextRun({ text: value || "" }),
-    ],
-    spacing: { after: 80 },
+function cell(children, opts = {}) {
+  const { shading, borders, width, columnSpan, margins } = opts;
+  return new TableCell({
+    children: Array.isArray(children) ? children : [children],
+    shading: shading ? { fill: shading, type: ShadingType.CLEAR } : undefined,
+    borders: borders || CARD_BORDER,
+    width: width ? { size: width, type: WidthType.PERCENTAGE } : undefined,
+    columnSpan,
+    margins: margins || { top: 120, bottom: 120, left: 160, right: 160 },
+    verticalAlign: VerticalAlign.TOP,
   });
+}
+
+function cardTable(rows, opts = {}) {
+  return new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
+    borders: opts.borders || CARD_BORDER,
+    rows,
+  });
+}
+
+function beregnSmsSegmenter(tekst) {
+  if (!tekst) return 0;
+  return Math.ceil(tekst.length / 160);
+}
+
+function metricCard(label, value) {
+  return cell([
+    para([run(label, { size: 18, color: TEXT_MUTED, bold: true, allCaps: true })], { spacing: { after: 60 } }),
+    para([run(value || "", { size: 40, bold: true, color: NAVY })], { spacing: { after: 0 } }),
+  ], { shading: WHITE, width: 33 });
+}
+
+function smsBox(title, tekst) {
+  const len = tekst?.length || 0;
+  const seg = beregnSmsSegmenter(tekst);
+  return cardTable([
+    new TableRow({
+      children: [
+        cell([
+          para([run(title, { bold: true, size: 18, color: BLUE, allCaps: true })], { spacing: { after: 100 } }),
+          para([run(tekst || "", { size: 28, color: TEXT_MID })], { spacing: { after: 80, line: 360 } }),
+          para([run(`${len} tegn · ${seg} SMS-segment(er)`, { size: 18, color: TEXT_LIGHT })], { spacing: { after: 0 } }),
+        ], { shading: SURFACE_ALT, borders: ACCENT_LEFT }),
+      ],
+    }),
+  ]);
+}
+
+function miniMetric(label, value) {
+  return cell([
+    para([run(label, { size: 16, color: TEXT_LIGHT, bold: true, allCaps: true })], { spacing: { after: 40 } }),
+    para([run(value || "", { size: 22, bold: true, color: NAVY })], { spacing: { after: 0 } }),
+  ], { shading: SURFACE_ALT, width: 33, borders: {
+    top: { style: BorderStyle.SINGLE, size: 1, color: BORDER },
+    bottom: { style: BorderStyle.SINGLE, size: 1, color: BORDER },
+    left: { style: BorderStyle.SINGLE, size: 1, color: BORDER },
+    right: { style: BorderStyle.SINGLE, size: 1, color: BORDER },
+  }});
 }
 
 export function sanitizeFilename(name) {
@@ -34,40 +128,146 @@ export async function buildLeveringDocx({ form, kampagner, result }) {
   const { sms, levering } = result;
   const children = [];
 
-  children.push(heading("DATAANALYSE & KAMPAGNEANBEFALINGER", HeadingLevel.HEADING_1));
-  children.push(body(`${form.kliknavn} — ${form.dato} — Udarbejdet af Allio`));
-  children.push(body("─".repeat(52)));
+  // ── Header ──
+  children.push(para([run(form.kliknavn || "Kampagne", { bold: true, size: 48, color: NAVY })], { spacing: { after: 40 } }));
+  children.push(para([
+    run(`Dataanalyse & Kampagneanbefalinger · ${form.dato} · `, { size: 22, color: TEXT_MUTED }),
+    run("Allio", { size: 22, color: TEXT_MUTED }),
+  ], { spacing: { after: 280 } }));
 
-  children.push(heading("STATUS & POTENTIALE"));
-  children.push(body(levering.status_analyse || ""));
+  // ── Status & Potentiale ──
+  children.push(cardTable([
+    new TableRow({
+      children: [
+        cell([
+          sectionLabel("Status & Potentiale"),
+          para([run(levering.status_analyse || "", { size: 28, color: TEXT_MID })], { line: 360 }),
+        ], { shading: WHITE, borders: ACCENT_LEFT }),
+      ],
+    }),
+  ]));
+  children.push(spacer(200));
 
+  // ── Samlede tal (3 kort) ──
+  children.push(cardTable([
+    new TableRow({
+      children: [
+        metricCard("Kampagnepris", levering.samlet_pris),
+        metricCard("Forv. bookinger", levering.samlet_bookinger),
+        metricCard("Forv. omsætning", levering.samlet_omsaetning),
+      ],
+    }),
+  ], { borders: {
+    top: { style: BorderStyle.NONE, size: 0, color: WHITE },
+    bottom: { style: BorderStyle.NONE, size: 0, color: WHITE },
+    left: { style: BorderStyle.NONE, size: 0, color: WHITE },
+    right: { style: BorderStyle.NONE, size: 0, color: WHITE },
+    insideHorizontal: { style: BorderStyle.NONE, size: 0, color: WHITE },
+    insideVertical: { style: BorderStyle.SINGLE, size: 8, color: WHITE },
+  }}));
+  children.push(spacer(240));
+
+  // ── Per kampagne ──
   kampagner.forEach((k, i) => {
     const lev = levering.kampagner[i] || {};
     const smsData = sms[i] || {};
-    children.push(body("─".repeat(52)));
-    children.push(heading(`KAMPAGNE ${i + 1}: ${(lev.navn || k.ydelse).toUpperCase()}`));
-    children.push(body(`${lev.antal} sovende kunder — ${lev.beskrivelse || ""}`));
-    children.push(heading("SMS #1 — Genaktivering", HeadingLevel.HEADING_3));
-    children.push(body(smsData.sms1 || ""));
-    children.push(heading("SMS #2 — Booster (48 timer efter)", HeadingLevel.HEADING_3));
-    children.push(body(smsData.sms2 || ""));
-    children.push(boldLine("Prisoverslag", lev.pris_udsendelse));
-    children.push(boldLine("Forventet", `${lev.forventet_bookinger} — ${lev.forventet_omsaetning}`));
+    const navn = lev.navn || k.ydelse;
+
+    children.push(cardTable([
+      new TableRow({
+        children: [
+          cell([
+            para([
+              run(`Kampagne ${i + 1}`, { bold: true, size: 18, color: BLUE }),
+              run("    "),
+              run(navn, { bold: true, size: 32, color: NAVY }),
+            ], { spacing: { after: 0 } }),
+          ], { shading: WHITE, width: 70, borders: { ...CARD_BORDER, right: { style: BorderStyle.NONE, size: 0, color: WHITE } } }),
+          cell([
+            para([run(String(lev.antal ?? ""), { bold: true, size: 44, color: NAVY })], {
+              alignment: AlignmentType.RIGHT, spacing: { after: 20 },
+            }),
+            para([run("sovende kunder", { size: 18, color: TEXT_MUTED })], {
+              alignment: AlignmentType.RIGHT, spacing: { after: 0 },
+            }),
+          ], { shading: WHITE, width: 30, borders: { ...CARD_BORDER, left: { style: BorderStyle.NONE, size: 0, color: WHITE } } }),
+        ],
+      }),
+      new TableRow({
+        children: [
+          cell([
+            para([run(lev.beskrivelse || "", { size: 22, color: TEXT_MUTED })], { spacing: { after: 0 }, line: 320 }),
+          ], { shading: WHITE, columnSpan: 2 }),
+        ],
+      }),
+    ]));
+    children.push(spacer(120));
+
+    children.push(smsBox("SMS #1 — Genaktivering", smsData.sms1));
+    children.push(spacer(120));
+    children.push(smsBox("SMS #2 — Booster (48 timer efter)", smsData.sms2));
+    children.push(spacer(120));
+
+    children.push(cardTable([
+      new TableRow({
+        children: [
+          miniMetric("Udsendelse", lev.pris_udsendelse),
+          miniMetric("Bookinger", lev.forventet_bookinger),
+          miniMetric("Omsætning", lev.forventet_omsaetning),
+        ],
+      }),
+    ], { borders: {
+      top: { style: BorderStyle.NONE, size: 0, color: WHITE },
+      bottom: { style: BorderStyle.NONE, size: 0, color: WHITE },
+      left: { style: BorderStyle.NONE, size: 0, color: WHITE },
+      right: { style: BorderStyle.NONE, size: 0, color: WHITE },
+      insideHorizontal: { style: BorderStyle.NONE, size: 0, color: WHITE },
+      insideVertical: { style: BorderStyle.SINGLE, size: 8, color: WHITE },
+    }}));
+    children.push(spacer(320));
   });
 
-  children.push(body("─".repeat(52)));
-  children.push(heading("SAMLET"));
-  children.push(boldLine("Kampagnepris", levering.samlet_pris));
-  children.push(boldLine("Forventede bookinger", levering.samlet_bookinger));
-  children.push(boldLine("Forventet omsætning", levering.samlet_omsaetning));
+  // ── Næste skridt ──
+  children.push(cardTable([
+    new TableRow({
+      children: [
+        cell([
+          sectionLabel("Næste skridt"),
+          ...(levering.naeste_skridt || []).map((s, idx) =>
+            para([
+              run(`${idx + 1}.  `, { bold: true, size: 24, color: BLUE }),
+              run(s, { size: 28, color: TEXT_MID }),
+            ], { spacing: { after: 120 }, line: 360 }),
+          ),
+        ], { shading: WHITE }),
+      ],
+    }),
+  ]));
+  children.push(spacer(160));
 
-  children.push(body("─".repeat(52)));
-  children.push(heading("NÆSTE SKRIDT"));
-  (levering.naeste_skridt || []).forEach((s, i) => {
-    children.push(body(`${i + 1}. ${s}`));
+  // ── Footer ──
+  children.push(para([
+    run("Udarbejdet af Allio", { size: 20, color: TEXT_LIGHT, italics: true }),
+  ], { alignment: AlignmentType.CENTER }));
+
+  const doc = new Document({
+    styles: {
+      default: {
+        document: {
+          run: { font: FONT, size: 28, color: TEXT_MID },
+        },
+      },
+    },
+    sections: [{
+      properties: {
+        page: {
+          margin: { top: 900, right: 900, bottom: 900, left: 900 },
+        },
+      },
+      children,
+    }],
   });
 
-  const doc = new Document({ sections: [{ children }] });
   return Packer.toBuffer(doc);
 }
 
