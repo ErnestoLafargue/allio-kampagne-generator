@@ -14,6 +14,10 @@ export function formatApiError(err, context = "sms") {
 
   const msg = err?.message || String(err);
 
+  if (msg.includes("afkortet")) {
+    return `${prefix}: AI-svaret blev afkortet. Prøv igen — evt. med færre kampagner eller kortere noter.`;
+  }
+
   if (msg.includes("Unexpected token") || msg.includes("JSON")) {
     return `${prefix}: AI returnerede ugyldigt format. Prøv igen.`;
   }
@@ -48,9 +52,25 @@ export async function parseApiResponse(r) {
   const t = d.content?.map(b => b.text || "").join("") || "";
   if (!t.trim()) throw new Error("AI returnerede intet svar.");
 
+  const renset = t.replace(/```json|```/g, "").trim();
+
   try {
-    return JSON.parse(t.replace(/```json|```/g, "").trim());
+    return JSON.parse(renset);
   } catch {
+    // Svaret blev afkortet af token-grænsen → kan aldrig være valid JSON
+    if (d.stop_reason === "max_tokens") {
+      throw new Error("AI-svaret blev afkortet.");
+    }
+    // Fallback: modellen kan have wrappet JSON i forklarende tekst
+    const start = renset.indexOf("{");
+    const slut = renset.lastIndexOf("}");
+    if (start !== -1 && slut > start) {
+      try {
+        return JSON.parse(renset.slice(start, slut + 1));
+      } catch {
+        throw new Error("AI returnerede ugyldigt JSON-format.");
+      }
+    }
     throw new Error("AI returnerede ugyldigt JSON-format.");
   }
 }

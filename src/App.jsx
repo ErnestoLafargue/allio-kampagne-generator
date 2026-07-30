@@ -2,10 +2,20 @@ import { useState, useEffect, useRef } from "react";
 import { getSaesonKontekst } from "./utils/saeson";
 import { normaliserSmsKampagner, normaliserLeveringKampagner } from "./utils/normalize";
 import { formatApiError, parseApiResponse } from "./utils/errors";
+import { smsOutputSchema, leveringOutputSchema } from "./utils/schemas";
 import { saveDraft, loadDraft, clearDraft, formatDraftTime, restoreKampagneIdCounter } from "./utils/persistence";
 
-const MAX_KAMPAGNER = 4;
+const MAX_KAMPAGNER = 6;
 const MIN_KAMPAGNER = 1;
+
+// Token-budget: rigeligt til komplet JSON for alle kampagner (2 SMS'er per kampagne)
+function smsTokenBudget(antalKampagner) {
+  return Math.min(8000, 1500 + antalKampagner * 900);
+}
+
+function leveringTokenBudget(antalKampagner) {
+  return Math.min(8000, 1200 + antalKampagner * 400);
+}
 
 // ── Allio Brand Colors ─────────────────────────────────
 const C = {
@@ -99,6 +109,7 @@ PERSONLIGHED:
 
 FORMAT: Returner KUN valid JSON uden markdown, kode-blokke eller forklaringer.
 Antallet af objekter i "kampagner" skal matche antallet af kampagner i konteksten — én entry per kampagne, i samme rækkefølge.
+Outputtet skal være KOMPLET JSON for ALLE kampagner — stop aldrig midt i en kampagne, og udelad aldrig en kampagne.
 
 {
   "kampagner": [
@@ -129,6 +140,7 @@ REGLER:
 
 FORMAT: Returner KUN valid JSON uden markdown eller forklaringer.
 Antallet af objekter i "kampagner" skal matche input — én entry per kampagne, i samme rækkefølge.
+Outputtet skal være KOMPLET JSON for ALLE kampagner — stop aldrig midt i en kampagne, og udelad aldrig en kampagne.
 
 {
   "kampagner": [
@@ -451,7 +463,7 @@ GENERELLE NOTER: ${form.ekstra_info || "Ingen"}
 ${getSaesonKontekst()}`;
   }
 
-  async function callAPI(sys, usr, maxTokens = 2500) {
+  async function callAPI(sys, usr, maxTokens = 2500, outputSchema = null) {
     const r = await fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -460,6 +472,7 @@ ${getSaesonKontekst()}`;
         max_tokens: maxTokens,
         system: sys,
         messages: [{ role: "user", content: usr }],
+        ...(outputSchema ? { output_schema: outputSchema } : {}),
       }),
     });
     return parseApiResponse(r);
@@ -472,7 +485,8 @@ ${getSaesonKontekst()}`;
       const p = await callAPI(
         SMS_SYSTEM_PROMPT,
         `Generer SMS-udkast for ${kampagner.length} kampagne(r):\n\n${buildContext()}`,
-        500 + kampagner.length * 400,
+        smsTokenBudget(kampagner.length),
+        smsOutputSchema(),
       );
       if (genId !== generationRef.current) return;
       setSmsRedigeret(normaliserSmsKampagner(p, kampagner.length));
@@ -491,12 +505,14 @@ ${getSaesonKontekst()}`;
         callAPI(
           REFINED_SMS_SYSTEM_PROMPT,
           `Poler disse SMS-udkast:\n${JSON.stringify(smsPayload)}\n\nKontekst:\n${kontekst}`,
-          500 + kampagner.length * 400,
+          smsTokenBudget(kampagner.length),
+          smsOutputSchema(),
         ),
         callAPI(
           LEVERING_SYSTEM_PROMPT,
           `Kampagneanalyse baseret på:\n${JSON.stringify(smsPayload)}\n\nKontekst:\n${kontekst}`,
-          800 + kampagner.length * 300,
+          leveringTokenBudget(kampagner.length),
+          leveringOutputSchema(),
         ),
       ]);
       if (genId !== generationRef.current) return;

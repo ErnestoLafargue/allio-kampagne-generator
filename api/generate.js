@@ -14,7 +14,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { system, messages, model, max_tokens } = req.body;
+    const { system, messages, model, max_tokens, output_schema } = req.body;
 
     if (!system || !messages?.length) {
       return res.status(400).json({
@@ -35,6 +35,10 @@ export default async function handler(req, res) {
         max_tokens: max_tokens || 1500,
         system,
         messages,
+        // Structured outputs: tvinger valid JSON der matcher skemaet
+        ...(output_schema
+          ? { output_config: { format: { type: "json_schema", schema: output_schema } } }
+          : {}),
       }),
     });
 
