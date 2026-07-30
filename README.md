@@ -14,7 +14,7 @@ Internt værktøj til Allios managers til at generere SMS-genaktiveringskampagne
 
 - React + Vite (frontend)
 - Vercel serverless functions (`/api/generate`, `/api/docx`)
-- Anthropic Claude API (`claude-sonnet-4-20250514`)
+- Anthropic Claude API (`claude-sonnet-5`)
 
 ## Miljøvariabler
 
